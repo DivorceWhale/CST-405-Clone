@@ -31,6 +31,8 @@ int lexErrorCount = 0;
 int tokenCount    = 0;
 int lineNo        = 1;
 int colNo         = 1;
+static int commentStartLine;
+static int commentStartCol;
 
 char lastLexeme[256];
 int  lastLine;
@@ -63,6 +65,7 @@ static void skip(const char* s, int n) {
 %option noyywrap
 %option nounput
 %option noinput
+%x COMMENT
 
 /* Named patterns keep the rules below readable.  A definition is pure
  * substitution — {digit}+ literally becomes [0-9]+ before flex sees it. */
@@ -129,7 +132,81 @@ number  {digit}+
   *   ./lexer tests/06_unterminated_comment.cm must report 1 error,  exit 1
   * ══════════════════════════════════════════════════════════════════════ */
 
- /* TODO: write your rules here. */
+ /* ---- whitespace ---- */
+[ \t\r]+                { skip(yytext, yyleng); }
+\n                       { skip(yytext, yyleng); }
+
+ /* ---- line comment ---- */
+"//".*                   { skip(yytext, yyleng); }
+
+ /* ---- block comment: enter/exit a state so EOF-inside-comment is easy ---- */
+"/*"                     { commentStartLine = lineNo; commentStartCol = colNo;
+                           skip(yytext, yyleng); BEGIN(COMMENT); }
+<COMMENT>"*/"            { skip(yytext, yyleng); BEGIN(INITIAL); }
+<COMMENT>\n              { skip(yytext, yyleng); }
+<COMMENT>.               { skip(yytext, yyleng); }
+<COMMENT><<EOF>>         {
+                             fprintf(stderr,
+                                 "Lexical error: unterminated comment starting at line %d, column %d\n",
+                                 commentStartLine, commentStartCol);
+                             lexErrorCount++;
+                             yyterminate();
+                         }
+
+ /* ---- keywords (must precede {ident}) ---- */
+"int"                    { return tok(TOK_INT); }
+"print"                  { return tok(TOK_PRINT); }
+"return"                 { return tok(TOK_RETURN); }
+"if"                     { return tok(TOK_IF); }
+"else"                   { return tok(TOK_ELSE); }
+"while"                  { return tok(TOK_WHILE); }
+"for"                    { return tok(TOK_FOR); }
+"switch"                 { return tok(TOK_SWITCH); }
+"case"                   { return tok(TOK_CASE); }
+"default"                { return tok(TOK_DEFAULT); }
+"break"                  { return tok(TOK_BREAK); }
+
+ /* ---- identifiers and numbers ---- */
+{ident}                  { return tok(TOK_ID); }
+{number}                 { return tok(TOK_NUM); }
+
+ /* ---- two-character operators (before the one-char ones) ---- */
+"<="                     { return tok(TOK_LE); }
+">="                     { return tok(TOK_GE); }
+"=="                     { return tok(TOK_EQ); }
+"!="                     { return tok(TOK_NE); }
+"&&"                     { return tok(TOK_AND); }
+"||"                     { return tok(TOK_OR); }
+
+ /* ---- one-character operators ---- */
+"+"                      { return tok(TOK_PLUS); }
+"-"                      { return tok(TOK_MINUS); }
+"*"                      { return tok(TOK_STAR); }
+"/"                      { return tok(TOK_SLASH); }
+"<"                      { return tok(TOK_LT); }
+">"                      { return tok(TOK_GT); }
+"!"                      { return tok(TOK_NOT); }
+"="                      { return tok(TOK_ASSIGN); }
+
+ /* ---- delimiters ---- */
+";"                      { return tok(TOK_SEMI); }
+":"                      { return tok(TOK_COLON); }
+","                      { return tok(TOK_COMMA); }
+"("                      { return tok(TOK_LPAREN); }
+")"                      { return tok(TOK_RPAREN); }
+"{"                      { return tok(TOK_LBRACE); }
+"}"                      { return tok(TOK_RBRACE); }
+"["                      { return tok(TOK_LBRACKET); }
+"]"                      { return tok(TOK_RBRACKET); }
+
+ /* ---- catch-all error rule, LAST, keeps scanning ---- */
+.                        {
+                             fprintf(stderr,
+                                 "Lexical error at line %d, column %d: unexpected character '%s'\n",
+                                 lineNo, colNo, yytext);
+                             lexErrorCount++;
+                             skip(yytext, yyleng);
+                         }
 
 
 %%

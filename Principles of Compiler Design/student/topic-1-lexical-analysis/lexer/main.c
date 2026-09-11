@@ -39,28 +39,92 @@
  * doing that is a good optional exercise.
  * -------------------------------------------------------------------------*/
 const char* tokenName(TokenKind k) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 1)
-     * Return the printable name of each token kind: TOK_INT -> "INT",
-     * TOK_ID -> "ID", TOK_LE -> "LE", and so on for every kind in
-     * tokens.h.  A switch with one case per kind is the obvious way.
-     *
-     * Compile with -Wall and let the compiler tell you which kinds you
-     * forgot: a switch over an enum with a missing case is a warning.
-     * ---------------------------------------------------------------- */
-    (void)k;
+    switch (k) {
+        case TOK_EOF:      return "EOF";
+
+        case TOK_INT:      return "INT";
+        case TOK_PRINT:    return "PRINT";
+        case TOK_RETURN:   return "RETURN";
+        case TOK_IF:       return "IF";
+        case TOK_ELSE:     return "ELSE";
+        case TOK_WHILE:    return "WHILE";
+        case TOK_FOR:      return "FOR";
+        case TOK_SWITCH:   return "SWITCH";
+        case TOK_CASE:     return "CASE";
+        case TOK_DEFAULT:  return "DEFAULT";
+        case TOK_BREAK:    return "BREAK";
+
+        case TOK_ID:       return "ID";
+        case TOK_NUM:      return "NUM";
+
+        case TOK_PLUS:     return "PLUS";
+        case TOK_MINUS:    return "MINUS";
+        case TOK_STAR:     return "STAR";
+        case TOK_SLASH:    return "SLASH";
+        case TOK_LT:       return "LT";
+        case TOK_GT:       return "GT";
+        case TOK_LE:       return "LE";
+        case TOK_GE:       return "GE";
+        case TOK_EQ:       return "EQ";
+        case TOK_NE:       return "NE";
+        case TOK_AND:      return "AND";
+        case TOK_OR:       return "OR";
+        case TOK_NOT:      return "NOT";
+        case TOK_ASSIGN:   return "ASSIGN";
+
+        case TOK_SEMI:     return "SEMI";
+        case TOK_COLON:    return "COLON";
+        case TOK_COMMA:    return "COMMA";
+        case TOK_LPAREN:   return "LPAREN";
+        case TOK_RPAREN:   return "RPAREN";
+        case TOK_LBRACE:   return "LBRACE";
+        case TOK_RBRACE:   return "RBRACE";
+        case TOK_LBRACKET: return "LBRACKET";
+        case TOK_RBRACKET: return "RBRACKET";
+
+        case TOK_ERROR:    return "ERROR";
+    }
     return "?";
 }
 
 const char* tokenCategory(TokenKind k) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 1)
-     * Return what the kind IS, so the table explains itself:
-     *   keyword · identifier · integer literal · arithmetic operator
-     *   relational operator · logical operator · assignment · delimiter
-     * Group the cases; there are only eight answers for thirty-odd kinds.
-     * ---------------------------------------------------------------- */
-    (void)k;
+    switch (k) {
+        case TOK_EOF:
+            return "end of file";
+
+        case TOK_INT: case TOK_PRINT: case TOK_RETURN:
+        case TOK_IF: case TOK_ELSE: case TOK_WHILE: case TOK_FOR:
+        case TOK_SWITCH: case TOK_CASE: case TOK_DEFAULT: case TOK_BREAK:
+            return "keyword";
+
+        case TOK_ID:
+            return "identifier";
+
+        case TOK_NUM:
+            return "integer literal";
+
+        case TOK_PLUS: case TOK_MINUS: case TOK_STAR: case TOK_SLASH:
+            return "arithmetic operator";
+
+        case TOK_LT: case TOK_GT: case TOK_LE: case TOK_GE:
+        case TOK_EQ: case TOK_NE:
+            return "relational operator";
+
+        case TOK_AND: case TOK_OR: case TOK_NOT:
+            return "logical operator";
+
+        case TOK_ASSIGN:
+            return "assignment";
+
+        case TOK_SEMI: case TOK_COLON: case TOK_COMMA:
+        case TOK_LPAREN: case TOK_RPAREN:
+        case TOK_LBRACE: case TOK_RBRACE:
+        case TOK_LBRACKET: case TOK_RBRACKET:
+            return "delimiter";
+
+        case TOK_ERROR:
+            return "error";
+    }
     return "?";
 }
 
