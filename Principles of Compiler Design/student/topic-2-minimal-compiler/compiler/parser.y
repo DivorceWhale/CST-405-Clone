@@ -75,7 +75,7 @@ ASTNode* root = NULL;
  *   %type <node> program stmt_list stmt decl assign expr print_stmt
  * (bison rejects a %type for a non-terminal that has no rules yet,
  *  which is why only `program` is listed to begin with) */
-%type <node> program
+%type <node> program stmt_list stmt decl assign expr print_stmt
 
 /* OPERATOR PRECEDENCE AND ASSOCIATIVITY
  * Listed from lowest to highest precedence.
@@ -142,14 +142,38 @@ ASTNode* root = NULL;
  *   Error messages are most of what people judge a compiler by.
  * -------------------------------------------------------------------- */
 
-/* A placeholder so that `make` succeeds before you have written anything.
- * It accepts exactly one program — the empty one — and builds no tree.
- * Delete it as soon as you have a real `program` rule. */
 program:
-    /* empty */ { root = NULL; }
+    stmt_list                  { root = $1; $$ = $1; }
     ;
 
-/* TODO: write your grammar rules here. */
+stmt_list:
+    stmt                       { $$ = $1; }
+    | stmt_list stmt           { $$ = createStmtList($1, $2); }
+    ;
+
+stmt:
+    decl                       { $$ = $1; }
+    | assign                   { $$ = $1; }
+    | print_stmt                { $$ = $1; }
+    ;
+
+decl:
+    INT ID ';'                 { $$ = createDecl("int", $2); free($2); }
+    ;
+
+assign:
+    ID '=' expr ';'            { $$ = createAssign($1, $3); free($1); }
+    ;
+
+expr:
+    NUM                        { $$ = createNum($1); }
+    | ID                       { $$ = createVar($1); free($1); }
+    | expr '+' expr            { $$ = createBinOp('+', $1, $3); }
+    ;
+
+print_stmt:
+    PRINT '(' expr ')' ';'     { $$ = createPrint($3); }
+    ;
 
 
 %%
