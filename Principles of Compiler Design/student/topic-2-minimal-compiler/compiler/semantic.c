@@ -174,6 +174,59 @@ static int isVarDeclaredInScope(char* name) {
     return 0;
 }
 
+/* Edit distance between two names (insertions, deletions, substitutions).
+ * Used only to suggest a correction for an undeclared identifier. */
+static int editDistance(const char* a, const char* b) {
+    int la = (int)strlen(a), lb = (int)strlen(b);
+    if (la > 63 || lb > 63) return 99;
+    int d[64][64];
+    for (int i = 0; i <= la; i++) d[i][0] = i;
+    for (int j = 0; j <= lb; j++) d[0][j] = j;
+    for (int i = 1; i <= la; i++) {
+        for (int j = 1; j <= lb; j++) {
+            int best = d[i - 1][j - 1] + (a[i - 1] != b[j - 1]);
+            if (d[i - 1][j] + 1 < best) best = d[i - 1][j] + 1;
+            if (d[i][j - 1] + 1 < best) best = d[i][j - 1] + 1;
+            d[i][j] = best;
+        }
+    }
+    return d[la][lb];
+}
+
+/* The visible name closest to `name`, or NULL if nothing is close enough
+ * to be a plausible typo (distance 2 or less, and less than the name's own
+ * length so that `x` is never "corrected" to `y`). */
+static const char* closestVisibleName(const char* name) {
+    const char* best = NULL;
+    int bestDist = 3;
+    for (int depth = scopeDepth - 1; depth >= 0; depth--) {
+        for (int i = 0; i < scopes[depth].count; i++) {
+            int dist = editDistance(name, scopes[depth].names[i]);
+            if (dist < bestDist && dist < (int)strlen(name)) {
+                bestDist = dist;
+                best = scopes[depth].names[i];
+            }
+        }
+    }
+    return best;
+}
+
+/* Report a use of a name that is not declared.  `context` says what the
+ * program was trying to do with it ("used", "assigned to"). */
+static void reportUndeclared(const char* name, int lineno, const char* context) {
+    const char* guess = closestVisibleName(name);
+    fprintf(stderr, "\n╔════════════════════════════════════════════════════════════╗\n");
+    fprintf(stderr, "║ SEMANTIC ERROR - Undeclared Variable                       ║\n");
+    fprintf(stderr, "╚════════════════════════════════════════════════════════════╝\n");
+    fprintf(stderr, "  📍 Location: Line %d\n", lineno);
+    fprintf(stderr, "  ❌ Error: '%s' is %s but was never declared\n", name, context);
+    if (guess)
+        fprintf(stderr, "  💡 Suggestion: did you mean '%s'?\n\n", guess);
+    else
+        fprintf(stderr, "  💡 Suggestion: declare it first, e.g.  int %s;\n\n", name);
+    semInfo.errorCount++;
+}
+
 /* Forward declaration: checkStmt and checkStmtList are mutually recursive,
  * which is exactly what you want when the thing being checked is a tree. */
 static void checkStmtList(ASTNode* node);
@@ -200,7 +253,25 @@ static void checkExpr(ASTNode* node) {
      * Increment semInfo.errorCount for each error.  Do NOT stop at the first
      * one: report everything you can find in a single run.
      * ---------------------------------------------------------------- */
-    (void)node;
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_NUM:
+            break;
+        case NODE_VAR:
+            if (!isVarDeclaredInScope(node->data.name))
+                reportUndeclared(node->data.name, node->lineno, "used");
+            break;
+        case NODE_BINOP:
+            checkExpr(node->data.binop.left);
+            checkExpr(node->data.binop.right);
+            break;
+        default:
+            fprintf(stderr, "SEMANTIC ERROR (line %d): unexpected node %d in an expression\n",
+                    node->lineno, node->type);
+            semInfo.errorCount++;
+            break;
+    }
 }
 
 /* Check statement */
@@ -221,7 +292,50 @@ static void checkStmt(ASTNode* node) {
      * (a form this language does not have — but think about it) it should not.
      * Languages differ here, and this is where that decision gets made.
      * ---------------------------------------------------------------- */
-    (void)node;
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_DECL: {
+            char* name = node->data.decl.name;
+            if (isReservedName(name)) {
+                reportReserved(name, node->lineno);
+                semInfo.errorCount++;
+                break;
+            }
+            if (addVarToScope(name) != 0) {
+                fprintf(stderr, "\n╔════════════════════════════════════════════════════════════╗\n");
+                fprintf(stderr, "║ SEMANTIC ERROR - Duplicate Declaration                     ║\n");
+                fprintf(stderr, "╚════════════════════════════════════════════════════════════╝\n");
+                fprintf(stderr, "  📍 Location: Line %d\n", node->lineno);
+                fprintf(stderr, "  ❌ Error: '%s' is already declared in this scope\n", name);
+                fprintf(stderr, "  💡 Suggestion: remove this declaration, or pick a new name\n\n");
+                semInfo.errorCount++;
+            } else {
+                trace("  line %d: declared '%s'\n", node->lineno, name);
+            }
+            break;
+        }
+        case NODE_ASSIGN:
+            /* A declaration is its own statement, so by the time we reach any
+             * assignment its target is either already in scope or never will
+             * be.  Checking the target before the right-hand side means an
+             * error in both is reported in left-to-right source order. */
+            if (!isVarDeclaredInScope(node->data.assign.var))
+                reportUndeclared(node->data.assign.var, node->lineno, "assigned to");
+            checkExpr(node->data.assign.value);
+            break;
+        case NODE_PRINT:
+            checkExpr(node->data.expr);
+            break;
+        case NODE_STMT_LIST:
+            checkStmtList(node);
+            break;
+        default:
+            fprintf(stderr, "SEMANTIC ERROR (line %d): unexpected node %d as a statement\n",
+                    node->lineno, node->type);
+            semInfo.errorCount++;
+            break;
+    }
 }
 
 /* Check statement list */
