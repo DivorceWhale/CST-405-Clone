@@ -471,6 +471,73 @@ void generateMIPSFromTAC(const char* filename) {
              *   code still works — just with an extra `lw` everywhere.  Reading your
              *   own output and spotting that is a genuinely good exercise.
              * -------------------------------------------------------- */
+            char tacText[256];
+            formatTAC(i, tacText, sizeof tacText);
+
+            switch (i->op) {
+                case TAC_DECL: {
+                    Symbol* s = lookupSymbol(i->result);
+                    fprintf(out, "    # int %s lives at %d($sp)\n",
+                            i->result, s ? s->offset : -1);
+                    break;
+                }
+
+                case TAC_ASSIGN: {
+                    fprintf(out, "    # %s\n", tacText);
+                    if (isConstant(i->arg1)) {
+                        /* Load the literal straight into the destination
+                         * instead of via a scratch register and a move. */
+                        int d = defReg(i->result);
+                        fprintf(out, "    li   $t%d, %s\n", d, i->arg1);
+                    } else {
+                        int a = operandReg(i->arg1);
+                        int d = defReg(i->result);
+                        fprintf(out, "    move $t%d, $t%d\n", d, a);
+                    }
+                    break;
+                }
+
+                case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_DIV: {
+                    fprintf(out, "    # %s\n", tacText);
+                    int a = operandReg(i->arg1);
+                    int b = operandReg(i->arg2);
+                    int d = defReg(i->result);
+                    fprintf(out, "    %-4s $t%d, $t%d, $t%d\n",
+                            mnemonicFor(i->op), d, a, b);
+                    break;
+                }
+
+                case TAC_PRINT: {
+                    fprintf(out, "    # %s\n", tacText);
+                    int a = operandReg(i->arg1);
+                    fprintf(out, "    move $a0, $t%d\n", a);
+                    fprintf(out, "    li   $v0, 1              # syscall 1 = print integer\n");
+                    fprintf(out, "    syscall\n");
+                    fprintf(out, "    la   $a0, __nl\n");
+                    fprintf(out, "    li   $v0, 4              # syscall 4 = print string\n");
+                    fprintf(out, "    syscall\n");
+                    break;
+                }
+
+                case TAC_RETURN:
+                    fprintf(out, "    # %s\n", tacText);
+                    if (i->arg1) {
+                        int a = operandReg(i->arg1);
+                        fprintf(out, "    move $v0, $t%d\n", a);
+                    }
+                    /* Jump rather than fall through: a return in the middle
+                     * of a function (Topic 3) must skip everything after it. */
+                    fprintf(out, "    j    %s__epilogue\n", funcLabel(currentFunc));
+                    break;
+
+                default:
+                    /* The IR declares opcodes the starter language never
+                     * produces; reaching one here means the front end and
+                     * back end are out of step, so say so loudly. */
+                    fprintf(stderr, "codegen: TAC opcode not supported in Topic 2: %s\n", tacText);
+                    fprintf(out, "    # UNSUPPORTED: %s\n", tacText);
+                    break;
+            }
         }
 
         flushRegisters("end of function body");
