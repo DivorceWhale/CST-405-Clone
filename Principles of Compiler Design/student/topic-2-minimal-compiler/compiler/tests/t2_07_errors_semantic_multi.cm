@@ -1,0 +1,13 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Three semantic errors, all reported in ONE run (the analyzer must not
+ * stop at the first):
+ *   line 9  : 'x' declared twice
+ *   line 11 : 'totl' undeclared  -> suggestion: did you mean 'total'?
+ *   line 12 : 't1' is reserved for compiler temporaries */
+int x;
+int total;
+int x;
+total = 1;
+totl = total + 1;
+int t1;
+print(total);

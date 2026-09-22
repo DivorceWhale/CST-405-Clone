@@ -1,0 +1,14 @@
+/* Expected output: 18  0  7  25
+ * Exercises the optimizer.  Every value here is known at compile time, so
+ * constant propagation + folding should reduce each assignment to a single
+ * constant; compare out.tac with out.optimized.tac to see it happen.
+ * `b + 0` exercises algebraic simplification. */
+int a; int b; int c; int d;
+a = 5 + 10 + 3;
+print(a);
+b = 0;
+print(b + 0);
+c = 3 + 4;
+print(c);
+d = a + c;
+print(d);

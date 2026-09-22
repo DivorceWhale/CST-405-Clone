@@ -1,0 +1,10 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Two missing semicolons.  Error recovery must let the parser report BOTH
+ * in one run, each naming its own line:
+ *   line 7 : missing ';' after assignment to 'a'
+ *   line 9 : missing ';' after print(...) */
+int a;
+a = 1
+a = a + 2;
+print(a)
+print(a);
