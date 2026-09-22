@@ -135,6 +135,34 @@ void appendOptimizedTAC(TACInstr* instr) {
 /* Forward declarations */
 static void generateTACStmt(ASTNode* node);
 
+/* Is `s` a compiler temporary (t0, t1, ...)?  freeTemp() only checks the
+ * first letter, so without this a user variable such as `total` would be
+ * mistaken for t0 and release a temporary that is still live. */
+static int isTempName(const char* s) {
+    if (!s || s[0] != 't' || !s[1]) return 0;
+    for (int i = 1; s[i]; i++) if (!isdigit((unsigned char)s[i])) return 0;
+    return 1;
+}
+
+/* Hand an operand back once the instruction that reads it has been emitted:
+ * temporaries return to the allocator, and the string itself is freed
+ * because createTAC keeps its own copy. */
+static void releaseOperand(char* s) {
+    if (!s) return;
+    if (isTempName(s)) freeTemp(s);
+    free(s);
+}
+
+/* TAC opcode for an AST operator character. */
+static TACOp opForChar(char op) {
+    switch (op) {
+        case '-': return TAC_SUB;
+        case '*': return TAC_MUL;
+        case '/': return TAC_DIV;
+        default:  return TAC_ADD;
+    }
+}
+
 
 /* Generate TAC for expression - returns the temp/var holding result */
 char* generateTACExpr(ASTNode* node) {
@@ -162,8 +190,32 @@ char* generateTACExpr(ASTNode* node) {
      * four, or if a temporary number is reused while still live, print the
      * TAC and walk it by hand — that listing is the point of this phase.
      * ---------------------------------------------------------------- */
-    (void)node;
-    return NULL;
+    if (!node) return NULL;
+
+    switch (node->type) {
+        case NODE_NUM: {
+            char* s = malloc(16);
+            snprintf(s, 16, "%d", node->data.num);
+            return s;
+        }
+        case NODE_VAR:
+            return strdup(node->data.name);
+        case NODE_BINOP: {
+            char* left  = generateTACExpr(node->data.binop.left);
+            char* right = generateTACExpr(node->data.binop.right);
+            /* The result temporary is allocated AFTER both operands are
+             * evaluated but BEFORE they are released, so it can never share
+             * a number with a value this instruction is still reading. */
+            char* t = allocTemp();
+            appendTAC(createTAC(opForChar(node->data.binop.op), left, right, t));
+            releaseOperand(left);
+            releaseOperand(right);
+            return t;
+        }
+        default:
+            fprintf(stderr, "TAC: unexpected node %d in an expression\n", node->type);
+            return NULL;
+    }
 }
 
 /* Generate TAC for statement list */
@@ -190,7 +242,32 @@ static void generateTACStmt(ASTNode* node) {
      *
      * Use appendTAC(createTAC(op, arg1, arg2, result)) to emit.
      * ---------------------------------------------------------------- */
-    (void)node;
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_DECL:
+            appendTAC(createTAC(TAC_DECL, node->data.decl.varType, NULL,
+                                node->data.decl.name));
+            break;
+        case NODE_ASSIGN: {
+            char* value = generateTACExpr(node->data.assign.value);
+            appendTAC(createTAC(TAC_ASSIGN, value, NULL, node->data.assign.var));
+            releaseOperand(value);
+            break;
+        }
+        case NODE_PRINT: {
+            char* value = generateTACExpr(node->data.expr);
+            appendTAC(createTAC(TAC_PRINT, value, NULL, NULL));
+            releaseOperand(value);
+            break;
+        }
+        case NODE_STMT_LIST:
+            generateTACStmtList(node);
+            break;
+        default:
+            fprintf(stderr, "TAC: unexpected node %d as a statement\n", node->type);
+            break;
+    }
 }
 
 void generateTAC(ASTNode* node) {
@@ -493,6 +570,105 @@ static TACList copyList(const TACList* src) {
     return d;
 }
 
+/* Two-operand opcodes: the ones constant folding can evaluate. */
+static int isBinaryOp(TACOp op) {
+    switch (op) {
+        case TAC_ADD: case TAC_SUB: case TAC_MUL: case TAC_DIV:
+        case TAC_LT:  case TAC_GT:  case TAC_LE:  case TAC_GE:
+        case TAC_EQ:  case TAC_NE:  case TAC_AND: case TAC_OR:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Does this opcode READ arg1 as a value?  (GOTO's arg1 is a label and
+ * CALL's is a function name — substituting a constant there would be
+ * nonsense, which is why this is a whitelist.) */
+static int readsArg1(TACOp op) {
+    if (isBinaryOp(op)) return 1;
+    switch (op) {
+        case TAC_NEG: case TAC_NOT: case TAC_ASSIGN: case TAC_PRINT:
+        case TAC_RETURN: case TAC_IF_FALSE: case TAC_IF_TRUE: case TAC_ARG:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/* Does this opcode READ arg2 as a value?  For array access arg2 is the
+ * index; arg1 is the array's name, which is an address, not a value. */
+static int readsArg2(TACOp op) {
+    return isBinaryOp(op) || op == TAC_ARRAY_LOAD || op == TAC_ARRAY_STORE;
+}
+
+/* Does this opcode write a new value into `result`? */
+static int definesResult(TACOp op) {
+    return mnemonicIsPure(op) || op == TAC_ASSIGN || op == TAC_CALL;
+}
+
+/* Replace an operand with a known constant (constant propagation) or with
+ * the name it is a copy of (copy propagation). */
+static void substituteOperand(char** operand) {
+    if (!*operand || isConstantNumber(*operand)) return;
+
+    const char* value = lookupFact(*operand, 1);
+    if (value) {
+        optStats.constProp++;
+    } else if ((value = lookupFact(*operand, 0)) != NULL) {
+        optStats.copyProp++;
+    } else {
+        return;
+    }
+    char* copy = strdup(value);
+    free(*operand);
+    *operand = copy;
+    changesThisPass++;
+}
+
+/* Rewrite an instruction in place as `result = value`. */
+static void becomeAssign(TACInstr* n, const char* value) {
+    char* copy = strdup(value);
+    free(n->arg1);
+    free(n->arg2);
+    n->op   = TAC_ASSIGN;
+    n->arg1 = copy;
+    n->arg2 = NULL;
+}
+
+/* x+0, 0+x, x-0, x*1, 1*x, x*0, 0*x, x/1  ->  a plain copy. */
+static void simplifyAlgebraic(TACInstr* n) {
+    const char* a = n->arg1;
+    const char* b = n->arg2;
+    const char* keep = NULL;
+    if (!a || !b) return;
+
+    switch (n->op) {
+        case TAC_ADD:
+            if      (strcmp(b, "0") == 0) keep = a;
+            else if (strcmp(a, "0") == 0) keep = b;
+            break;
+        case TAC_SUB:
+            if (strcmp(b, "0") == 0) keep = a;
+            break;
+        case TAC_MUL:
+            if      (strcmp(a, "0") == 0 || strcmp(b, "0") == 0) keep = "0";
+            else if (strcmp(b, "1") == 0) keep = a;
+            else if (strcmp(a, "1") == 0) keep = b;
+            break;
+        case TAC_DIV:
+            if (strcmp(b, "1") == 0) keep = a;
+            break;
+        default:
+            break;
+    }
+    if (keep) {
+        becomeAssign(n, keep);
+        optStats.algebraic++;
+        changesThisPass++;
+    }
+}
+
 /* -------------------------------------------------------------------------
  * One optimization pass over `in`, producing `out`.
  * Returns the number of changes made.
@@ -523,11 +699,73 @@ static TACList optimizePass(TACList* in) {
      * run again, and in the matching optStats field so main.c can report it.
      * ---------------------------------------------------------------- */
     TACList out = { NULL, NULL, in->tempCount, in->labelCount };
+
+    /* Facts are only valid inside the pass that learned them: they point at
+     * strings owned by instructions in `out`. */
+    clearFacts();
+
     for (TACInstr* c = in->head; c; c = c->next) {
         TACInstr* n = createTAC(c->op, c->arg1, c->arg2, c->result);
+
+        /* A label (or a function boundary) starts a new basic block: control
+         * can arrive from anywhere, so nothing learned before it still holds. */
+        if (n->op == TAC_LABEL || n->op == TAC_FUNC_BEGIN || n->op == TAC_FUNC_END)
+            clearFacts();
+
+        /* 3 & 4. Propagation: substitute known values into the operands this
+         * instruction READS.  Substitution must happen before the instruction's
+         * own definition is recorded, so that `x = x + 1` reads the old x. */
+        if (readsArg1(n->op))            substituteOperand(&n->arg1);
+        if (readsArg2(n->op))            substituteOperand(&n->arg2);
+        if (n->op == TAC_ARRAY_STORE)    substituteOperand(&n->result);
+
+        /* 1. Algebraic simplification, then 2. constant folding.  Propagation
+         * above is what gives these two something to work on. */
+        simplifyAlgebraic(n);
+        if (isBinaryOp(n->op)) {
+            int folded;
+            char* value = foldConstants(n->op, n->arg1, n->arg2, &folded);
+            if (folded) {
+                becomeAssign(n, value);
+                free(value);
+                optStats.constFold++;
+                changesThisPass++;
+            }
+        }
+
+        /* Record what this instruction teaches us about its result. */
+        if (definesResult(n->op) && n->result) {
+            dropFactsAbout(n->result);
+            if (n->op == TAC_ASSIGN && strcmp(n->arg1, n->result) != 0)
+                recordFact(n->result, n->arg1, isConstantNumber(n->arg1));
+        }
+        if (n->op == TAC_CALL) dropNonTempFacts();
+
         if (!out.head) out.head = out.tail = n;
         else { out.tail->next = n; out.tail = n; }
     }
+
+    /* 5. Dead code elimination.  Only compiler temporaries are candidates:
+     * a user variable might be observed in ways this pass does not model
+     * (globals, and later a debugger), while a temporary exists only to be
+     * read by later TAC — if nothing reads it, it is garbage. */
+    TACInstr* prev = NULL;
+    for (TACInstr* n = out.head; n; ) {
+        TACInstr* next = n->next;
+        int candidate = (mnemonicIsPure(n->op) || n->op == TAC_ASSIGN)
+                        && isTempName(n->result);
+        if (candidate && !isReadLater(next, n->result)) {
+            if (prev) prev->next = next; else out.head = next;
+            if (out.tail == n) out.tail = prev;
+            free(n->arg1); free(n->arg2); free(n->result); free(n);
+            optStats.deadCode++;
+            changesThisPass++;
+        } else {
+            prev = n;
+        }
+        n = next;
+    }
+
     return out;
 }
 
