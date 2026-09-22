@@ -55,7 +55,17 @@ extern int yylineno;  /* Line number from scanner */
 
 void yyerror(const char* s);
 ASTNode* root = NULL;
+
+/* Syntax errors seen so far.  Error productions let the parser recover and
+ * keep going, which makes yyparse() return 0 even though the program was
+ * wrong; this count is how the `program` rule knows not to hand a tree to
+ * the later phases anyway. */
+static int syntaxErrors = 0;
 %}
+
+/* Report WHAT was expected ("unexpected ID, expecting ';' or '+'") instead
+ * of a bare "syntax error". */
+%define parse.error verbose
 
 /* SEMANTIC VALUES UNION */
 %union {
@@ -142,8 +152,11 @@ ASTNode* root = NULL;
  *   Error messages are most of what people judge a compiler by.
  * -------------------------------------------------------------------- */
 
+/* A program with any syntax error produces no tree at all: the recovered
+ * tree has holes where the bad statements were, and no later phase should
+ * have to cope with that. */
 program:
-    stmt_list                  { root = $1; $$ = $1; }
+    stmt_list                  { root = syntaxErrors ? NULL : $1; $$ = root; }
     ;
 
 stmt_list:
@@ -157,12 +170,31 @@ stmt:
     | print_stmt                { $$ = $1; }
     ;
 
+/* ERROR PRODUCTIONS
+ * Each `error` alternative below matches a statement that is correct up to
+ * the point where its ';' should be.  Bison reports the error through
+ * yyerror, discards the bad input, and resumes here — so we can add a
+ * message that names the statement, and parsing continues with the next
+ * one so that a single run reports every missing ';'.
+ *
+ * The line number comes from the last node built before the error, not from
+ * yylineno: by the time bison notices a missing ';' it has already read the
+ * NEXT token, which is usually on the following line. */
+stmt:
+    error ';'                  { $$ = NULL; yyerrok; }
+    ;
+
 decl:
     INT ID ';'                 { $$ = createDecl("int", $2); free($2); }
+    | INT ID error             { fprintf(stderr, "  -> missing ';' after declaration of '%s'\n", $2);
+                                 free($2); $$ = NULL; yyerrok; }
     ;
 
 assign:
     ID '=' expr ';'            { $$ = createAssign($1, $3); free($1); }
+    | ID '=' expr error        { fprintf(stderr, "  -> line %d: missing ';' after assignment to '%s'\n",
+                                         $3->lineno, $1);
+                                 free($1); $$ = NULL; yyerrok; }
     ;
 
 expr:
@@ -173,12 +205,19 @@ expr:
 
 print_stmt:
     PRINT '(' expr ')' ';'     { $$ = createPrint($3); }
+    | PRINT '(' expr ')' error { fprintf(stderr, "  -> line %d: missing ';' after print(...)\n",
+                                         $3->lineno);
+                                 $$ = NULL; yyerrok; }
     ;
 
 
 %%
 
-/* ERROR HANDLING */
+/* ERROR HANDLING
+ * yylineno is the line of the token bison was looking at when it gave up,
+ * which is where the error was DETECTED; the error productions above add
+ * where it was most likely MADE. */
 void yyerror(const char* s) {
+    syntaxErrors++;
     fprintf(stderr, "Syntax Error at line %d: %s\n", yylineno, s);
 }
