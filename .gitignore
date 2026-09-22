@@ -31,3 +31,9 @@ parser.tab.h
 y.tab.c
 y.tab.h
 parser.output
+*.tac
+
+# Compiled compiler binaries and generated assembly.  Scoped to the student
+# folders (not bare names) for the reason given in the note above.
+Principles of Compiler Design/student/**/minicompiler
+Principles of Compiler Design/student/**/*.s
