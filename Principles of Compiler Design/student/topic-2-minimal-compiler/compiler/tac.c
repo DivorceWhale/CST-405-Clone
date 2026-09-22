@@ -12,11 +12,10 @@
  * WHAT COMES NEXT
  *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
  *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * RECEIVES  the AST, after semantic.c has certified it (every name declared)
+ * PRODUCES  two TAC lists: the direct translation (saved as .tac) and the
+ *           optimized version (saved as .optimized.tac) that codegen.c
+ *           turns into MIPS
  * ========================================================================= */
 
 #include <stdio.h>
@@ -164,32 +163,14 @@ static TACOp opForChar(char op) {
 }
 
 
-/* Generate TAC for expression - returns the temp/var holding result */
+/* Emit the TAC that computes an expression, and return the NAME of the
+ * location holding its value: a literal ("42"), a variable ("x"), or a
+ * temporary ("t0").  The caller owns the returned string.
+ *
+ * Returning a name, whatever kind it is, is what makes the recursion work:
+ * a BINOP asks each operand for a name and does not care which kind it got.
+ * For  a + b + c  this emits  t0 = a + b ;  t1 = t0 + c  and returns "t1". */
 char* generateTACExpr(ASTNode* node) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — EXPRESSION -> THREE-ADDRESS CODE
-     * Return the NAME of the location holding this expression's value.  That
-     * return value is the whole contract, and it is what makes the recursion
-     * work: a caller does not care whether it gets back a literal, a variable
-     * or a temporary, only that it can name the value.
-     *
-     *     NODE_NUM    return a string holding the literal, e.g. "42"
-     *     NODE_VAR    return a copy of the variable's name
-     *     NODE_BINOP  t = allocTemp();
-     *                 left  = generateTACExpr(left child)
-     *                 right = generateTACExpr(right child)
-     *                 emit  t = left + right
-     *                 freeTemp(left); freeTemp(right);
-     *                 return t
-     *
-     * Free the operand temporaries AFTER emitting, never before: freeing t1
-     * and then using it in the instruction you are about to emit is how you
-     * end up with two live values in the same temporary.
-     *
-     * For  a + b + c  you should get exactly three instructions.  If you get
-     * four, or if a temporary number is reused while still live, print the
-     * TAC and walk it by hand — that listing is the point of this phase.
-     * ---------------------------------------------------------------- */
     if (!node) return NULL;
 
     switch (node->type) {
@@ -230,18 +211,9 @@ static void generateTACStmtList(ASTNode* node) {
     }
 }
 
-/* Generate TAC for a statement */
+/* Emit the TAC for one statement.  A declaration produces a DECL even though
+ * no code runs for it: the back end needs it to reserve the variable's slot. */
 static void generateTACStmt(ASTNode* node) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — STATEMENT -> THREE-ADDRESS CODE
-     *     NODE_DECL    emit TAC_DECL — no code runs, but the back end needs to
-     *                  know the variable exists so it can reserve a slot
-     *     NODE_ASSIGN  evaluate the expression, then emit TAC_ASSIGN
-     *     NODE_PRINT   evaluate the expression, then emit TAC_PRINT
-     *     NODE_STMT_LIST  recurse
-     *
-     * Use appendTAC(createTAC(op, arg1, arg2, result)) to emit.
-     * ---------------------------------------------------------------- */
     if (!node) return;
 
     switch (node->type) {
@@ -670,34 +642,16 @@ static void simplifyAlgebraic(TACInstr* n) {
 }
 
 /* -------------------------------------------------------------------------
- * One optimization pass over `in`, producing `out`.
- * Returns the number of changes made.
+ * One optimization pass over `in`, returning the rewritten list.
+ *
+ * Walks the instructions in order, remembering FACTS ("x holds 5", "t1 is a
+ * copy of y") and using them to rewrite later operands.  Propagation and
+ * folding feed each other:  x = 5 ; y = x + 1  ->  y = 5 + 1  ->  y = 6.
+ *
+ * Every rewrite is counted in changesThisPass (so optimizeTAC knows whether
+ * to run another pass) and in optStats (so main.c can report it).
  * -----------------------------------------------------------------------*/
 static TACList optimizePass(TACList* in) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — ONE OPTIMIZATION PASS
-     * Copy `in` to `out`, rewriting what you can along the way.  Start with
-     * the two transformations that pay off immediately on this language:
-     *
-     *   CONSTANT FOLDING     t0 = 2 + 3      ->   t0 = 5
-     *                        Both operands are literals, so do the arithmetic
-     *                        now instead of at run time.  foldConstants() is
-     *                        already written for you.
-     *
-     *   CONSTANT PROPAGATION x = 5 ; y = x + 1   ->   y = 5 + 1
-     *                        Remember that x holds 5, and substitute it into
-     *                        later operands.  Then folding turns that into 6,
-     *                        which is why these two techniques belong together.
-     *
-     *   THE RULE YOU MUST NOT BREAK: forget every remembered value at a LABEL.
-     *   Control can arrive at a label from anywhere, so nothing you learned
-     *   before it is still guaranteed.  Topic 2 has no labels yet — but write
-     *   the code as if it did, because Topic 4 will add them and you will not
-     *   remember this warning then.
-     *
-     * Count every rewrite in changesThisPass so optimizeTAC() knows whether to
-     * run again, and in the matching optStats field so main.c can report it.
-     * ---------------------------------------------------------------- */
     TACList out = { NULL, NULL, in->tempCount, in->labelCount };
 
     /* Facts are only valid inside the pass that learned them: they point at
