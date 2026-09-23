@@ -6,18 +6,9 @@
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                        ^^^  this file
  *
- * WHAT IS NEW IN TOPIC 2
- *   • The node kinds the starter language needs: NUM, VAR, BINOP,
- *   • DECL, ASSIGN, PRINT, STMT_LIST
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * DEFINES   the AST node kinds and their constructors: the contract
+ *           between the parser, which builds the tree, and semantic.c and
+ *           tac.c, which walk it
  * ========================================================================= */
 
 #ifndef AST_H

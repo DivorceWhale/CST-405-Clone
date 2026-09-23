@@ -5,17 +5,13 @@
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *
- * WHAT IS NEW IN TOPIC 2
- *   • Four bytes per int, handed out in declaration order
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * RECEIVES  the DECL instructions of a function, from codegen.c's frame
+ *           layout pass
+ * PRODUCES  the storage map: for every declared name, its home in memory
+ *           (a byte offset from $sp, or a .data label for globals), which
+ *           codegen.c consults for every load and store
+ * NOTE      this table only assigns storage; legality of names is checked
+ *           earlier, in semantic.c
  * ========================================================================= */
 
 /* ============================================================================
@@ -88,19 +84,11 @@ void initSymTab(void) {
     locals.nextOffset = 0;   /* Offsets grow upward from $sp */
 }
 
+/* Give a local scalar the next free word in the frame.  Returns its byte
+ * offset from $sp (0, 4, 8, ... in declaration order), or -1 if the name is
+ * already in this frame.  semantic.c has already rejected duplicates, so -1
+ * is a safety net, not the way duplicates are reported. */
 int addVar(char* name, char* type) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — DECLARE A VARIABLE
-     * Add `name` to the local table and give it a home in the frame.
-     * Return the byte offset you assigned, or -1 if the name is already
-     * declared — the caller uses -1 to report a duplicate declaration.
-     *
-     * Each int takes 4 bytes, and offsets run upward from 0.  So the first
-     * variable lives at 0($sp), the second at 4($sp), and nextOffset is
-     * simply the running total.
-     *
-     * findIn() and appendTo() above do the searching and the allocation.
-     * ---------------------------------------------------------------- */
     if (findIn(&locals, name)) return -1;
 
     Symbol* s = appendTo(&locals, name, type);
@@ -109,6 +97,12 @@ int addVar(char* name, char* type) {
     return s->offset;
 }
 
+/* Declare a local array of `size` ints.  The elements are laid out
+ * contiguously in the frame, so the array takes size*4 bytes starting at the
+ * returned offset (element i lives at offset + 4*i).  Returns the offset of
+ * element 0, or -1 if the name is already declared in this frame.
+ * Not reachable from Topic 2 source (the language has no arrays yet); it is
+ * here so the storage map does not change shape in Topic 3. */
 int addArray(char* name, int size) {
     if (findIn(&locals, name)) return -1;
     if (size <= 0) size = 1;                       /* Defensive: never 0    */
@@ -121,6 +115,9 @@ int addArray(char* name, int size) {
     return s->offset;
 }
 
+/* Declare an array PARAMETER.  Arrays are passed by reference, so the slot
+ * holds the caller's base ADDRESS, not the elements: one word, whatever the
+ * array's length.  Returns the slot's offset, or -1 if already declared. */
 int addArrayParam(char* name) {
     if (findIn(&locals, name)) return -1;
 
@@ -133,6 +130,9 @@ int addArrayParam(char* name) {
     return s->offset;
 }
 
+/* Bytes of frame space handed out so far in the current function: the sum
+ * of every local's slot.  codegen.c adds room for the saved return address
+ * and rounds up to size the whole activation record. */
 int getLocalBytes(void) {
     return locals.nextOffset;
 }
@@ -147,6 +147,9 @@ void initGlobalScope(void) {
     globalsReady       = 1;
 }
 
+/* Declare a global scalar.  Globals live in the .data section and are
+ * addressed by label, so no offset is assigned.  Returns 0 on success, or -1
+ * if a global of that name already exists. */
 int addGlobalVar(char* name, char* type) {
     if (findIn(&globals, name)) return -1;
     Symbol* s   = appendTo(&globals, name, type);
@@ -154,6 +157,8 @@ int addGlobalVar(char* name, char* type) {
     return 0;
 }
 
+/* Declare a global array of `size` ints in the .data section.  Returns 0 on
+ * success, or -1 if a global of that name already exists. */
 int addGlobalArray(char* name, int size) {
     if (findIn(&globals, name)) return -1;
     if (size <= 0) size = 1;
@@ -168,14 +173,14 @@ int addGlobalArray(char* name, int size) {
  * LOOKUP — locals shadow globals, exactly as the language rules require
  * ========================================================================*/
 
+/* Searching locals before globals is the whole implementation of scoping
+ * here: it is what lets a local declaration hide a global of the same name.
+ *
+ * KNOWN LIMITATION: there is one flat local table per function, with no
+ * nested block scopes.  If a later topic allows `int i;` inside a nested
+ * block while an outer `i` exists, addVar will refuse the second one and
+ * both will share the outer slot, even though semantic.c accepts it. */
 Symbol* lookupSymbol(const char* name) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — RESOLVE A NAME
-     * Return the symbol for `name`, or NULL if it is not declared.
-     * Search the LOCAL table first and the GLOBAL table second: that order is
-     * what makes an inner declaration shadow an outer one, and it is the
-     * entire implementation of scoping at this milestone.
-     * ---------------------------------------------------------------- */
     Symbol* s = findIn(&locals, name);
     if (s) return s;
     /* Before initGlobalScope has run the global table holds garbage, so
@@ -184,27 +189,35 @@ Symbol* lookupSymbol(const char* name) {
     return findIn(&globals, name);
 }
 
+/* Frame offset of a LOCAL name, or -1 if the name is global (globals have a
+ * label, not an offset) or not declared at all. */
 int getVarOffset(char* name) {
     Symbol* s = lookupSymbol(name);
     if (!s || s->isGlobal) return -1;             /* Globals have no offset */
     return s->offset;
 }
 
+/* Element count of an array, or -1 if the name is not an array.  Returns 0
+ * for an array parameter, whose length the callee cannot know. */
 int getArraySize(char* name) {
     Symbol* s = lookupSymbol(name);
     if (!s || !s->isArray) return -1;
     return s->arraySize;
 }
 
+/* 1 if the name has storage in the local or global table, 0 otherwise. */
 int isVarDeclared(char* name) {
     return lookupSymbol(name) != NULL;
 }
 
+/* 1 if the name resolves to an array (local, global or parameter). */
 int isArray(char* name) {
     Symbol* s = lookupSymbol(name);
     return s && s->isArray;
 }
 
+/* 1 if the name resolves to a global.  A local of the same name hides the
+ * global, so this answers for whichever declaration is actually visible. */
 int isGlobalSymbol(char* name) {
     Symbol* s = lookupSymbol(name);
     return s && s->isGlobal;
@@ -231,6 +244,9 @@ static void printOne(const Symbol* s) {
     }
 }
 
+/* Print both tables with every name's storage location.  codegen.c calls
+ * this once per function, after the frame has been laid out, which is what
+ * makes the symbol table viewable as its own phase output in the trace. */
 void printSymTab(void) {
     trace("\n  ┌─ SYMBOL TABLE ─────────────────────────────────────────────┐\n");
 

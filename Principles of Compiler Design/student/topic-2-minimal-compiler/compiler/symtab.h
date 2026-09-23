@@ -5,17 +5,8 @@
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *
- * WHAT IS NEW IN TOPIC 2
- *   • Name -> storage location, the map every later phase consults
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * DEFINES   the storage map's interface: declare a name, look it up,
+ *           and ask where it lives at run time
  * ========================================================================= */
 
 #ifndef SYMTAB_H

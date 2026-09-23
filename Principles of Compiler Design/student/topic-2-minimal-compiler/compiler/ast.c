@@ -6,16 +6,9 @@
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                        ^^^  this file
  *
- * WHAT IS NEW IN TOPIC 2
- *   • One constructor per node kind, plus a tree printer
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *    * RECEIVES  grammar reductions from the parser (parser.y), one call per rule
- *      PRODUCES  the abstract syntax tree rooted at `root`, which semantic.c
- *           checks and tac.c translates
+ * RECEIVES  one call per grammar rule the parser reduces (parser.y actions)
+ * PRODUCES  the abstract syntax tree rooted at `root`, which semantic.c
+ *           checks and tac.c translates; printAST shows it in the trace
  * ========================================================================= */
 
 /* AST IMPLEMENTATION

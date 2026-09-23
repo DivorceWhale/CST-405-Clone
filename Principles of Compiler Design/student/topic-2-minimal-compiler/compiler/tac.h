@@ -6,16 +6,10 @@
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                           ^^^  this file
  *
- * UNCHANGED SINCE TOPIC 1 — the interfaces held, which is the point
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * DEFINES   the three-address-code instruction set: the contract between
+ *           the front end (tac.c builds it) and the back end (codegen.c
+ *           consumes it).  The full set is declared now so the contract does
+ *           not change shape as later topics start emitting more of it
  * ========================================================================= */
 
 #ifndef TAC_H
@@ -24,10 +18,10 @@
 #include <stddef.h>
 #include "ast.h"
 
-/* THREE-ADDRESS CODE (TAC) - WITH FUNCTION SUPPORT
+/* THREE-ADDRESS CODE (TAC)
  * Intermediate representation between AST and machine code
  * Each instruction has at most 3 operands (result = arg1 op arg2)
- * Now supports functions, control flow, and all operators
+ * The full instruction set is declared below; Topic 2 emits only a subset
  */
 
 /* TAC INSTRUCTION TYPES

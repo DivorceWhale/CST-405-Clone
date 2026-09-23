@@ -6,23 +6,16 @@
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                               ^^^^^^^^  this file
  *
- * WHAT IS NEW IN TOPIC 2
- *   • Undeclared variables and duplicate declarations, reported with line numbers
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * RECEIVES  the AST from the parser
+ * PRODUCES  a verdict: 0 when every name is declared exactly once and before
+ *           use, so tac.c may proceed; otherwise every error is reported
+ *           with its line and name, and main.c stops compilation
  * ========================================================================= */
 
-/* SEMANTIC ANALYSIS IMPLEMENTATION - WITH FUNCTION SUPPORT
- * Performs semantic checks on the Abstract Syntax Tree
- * Now supports functions, scopes, parameters, control flow
- */
+/* SEMANTIC ANALYSIS IMPLEMENTATION
+ * Walks the AST once, keeping a stack of scopes (only the global scope is
+ * used in Topic 2).  This stack answers "is this name visible here?" and is
+ * thrown away afterwards; where a name LIVES is symtab.c's job. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,6 +59,8 @@ static void enterScope() {
     scopeDepth++;
 }
 
+/* Leave the innermost scope, freeing the names declared in it: once a scope
+ * closes, its names must stop being visible to the checks that follow. */
 static void exitScope() {
     if (scopeDepth > 0) {
         /* Free variable names in this scope */
@@ -124,6 +119,8 @@ static int isReservedName(const char* name) {
     return 1;
 }
 
+/* Print the error for a variable named like a compiler temporary or label.
+ * The caller counts the error; this only formats the message. */
 static void reportReserved(const char* name, int lineno) {
     fprintf(stderr, "\n╔════════════════════════════════════════════════════════════╗\n");
     fprintf(stderr, "║ SEMANTIC ERROR - Reserved Identifier                      ║\n");
@@ -135,6 +132,10 @@ static void reportReserved(const char* name, int lineno) {
     fprintf(stderr, "  💡 Suggestion: rename the variable, for example '%s_' or 'total'\n\n", name);
 }
 
+/* Record `name` as declared in the innermost scope.  Returns 0 on success,
+ * or -1 if the same scope already declares it: a duplicate declaration.
+ * Only the CURRENT scope is searched, so an inner scope may reuse an outer
+ * name (shadowing) without that counting as a duplicate. */
 static int addVarToScope(char* name) {
     if (scopeDepth == 0) {
         fprintf(stderr, "SEMANTIC ERROR: No scope to add variable to\n");
@@ -231,28 +232,10 @@ static void reportUndeclared(const char* name, int lineno, const char* context) 
  * which is exactly what you want when the thing being checked is a tree. */
 static void checkStmtList(ASTNode* node);
 
-/* Check expression for semantic correctness */
+/* Check an expression: every variable it reads must be declared and visible.
+ * Errors are counted, not fatal, so one run reports every problem in the
+ * program instead of making the programmer fix them one compile at a time. */
 static void checkExpr(ASTNode* node) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — CHECK AN EXPRESSION
-     * Walk the expression and report anything that cannot mean what it says.
-     *
-     *     NODE_NUM    always fine
-     *     NODE_VAR    the name must be declared and VISIBLE here
-     *                 -> isVarDeclaredInScope(node->data.name)
-     *     NODE_BINOP  nothing to check about the operator itself; recurse into
-     *                 both operands
-     *
-     * When you report an error: give the LINE NUMBER (node->lineno), name the
-     * identifier, and say what would fix it.  Compare these two messages and
-     * decide which one you would rather receive:
-     *
-     *     error: undeclared identifier
-     *     line 7: 'totl' is not declared — did you mean 'total'?
-     *
-     * Increment semInfo.errorCount for each error.  Do NOT stop at the first
-     * one: report everything you can find in a single run.
-     * ---------------------------------------------------------------- */
     if (!node) return;
 
     switch (node->type) {
@@ -274,24 +257,10 @@ static void checkExpr(ASTNode* node) {
     }
 }
 
-/* Check statement */
+/* Check one statement.  A declaration adds its name to the current scope
+ * only when it is reached, so statements are checked in source order and a
+ * use before the declaration is reported as undeclared — the same rule as C. */
 static void checkStmt(ASTNode* node) {
-    /* ----------------------------------------------------------------
-     * TODO (Topic 2) — CHECK A STATEMENT
-     *     NODE_DECL    the name must NOT already be declared in this scope.
-     *                  On success, add it: addVarToScope(name).
-     *     NODE_ASSIGN  the target must already be declared; then check the
-     *                  expression on the right with checkExpr.
-     *     NODE_PRINT   check the expression.
-     *     NODE_STMT_LIST  recurse into both halves via checkStmtList.
-     *
-     * Order matters in NODE_ASSIGN and it is easy to get backwards.  For
-     *     int x;  x = x + 1;
-     * checking the right-hand side must happen with x already in scope.  For
-     *     int x = x + 1;
-     * (a form this language does not have — but think about it) it should not.
-     * Languages differ here, and this is where that decision gets made.
-     * ---------------------------------------------------------------- */
     if (!node) return;
 
     switch (node->type) {
@@ -350,13 +319,17 @@ static void checkStmtList(ASTNode* node) {
     }
 }
 
+/* Entry point for Phase 3.  Opens the global scope, checks every statement
+ * in source order, then closes the scope.  Returns 0 if the program is
+ * semantically valid, or -1 if any error was reported, which tells main.c
+ * to stop before generating code for a program that means nothing. */
 int performSemanticAnalysis(ASTNode* root) {
     if (!root) {
         fprintf(stderr, "SEMANTIC ERROR: No AST to analyze\n");
         return -1;
     }
 
-    trace("Running semantic analysis with function support...\n\n");
+    trace("Running semantic analysis...\n\n");
 
     /* Enter global scope */
     enterScope();
