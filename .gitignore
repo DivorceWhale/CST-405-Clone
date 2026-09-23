@@ -37,3 +37,4 @@ parser.output
 # folders (not bare names) for the reason given in the note above.
 Principles of Compiler Design/student/**/minicompiler
 Principles of Compiler Design/student/**/*.s
+Principles of Compiler Design/student/*/lexer/lexer
