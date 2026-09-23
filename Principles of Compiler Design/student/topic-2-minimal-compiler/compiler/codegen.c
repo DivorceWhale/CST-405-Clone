@@ -6,17 +6,8 @@
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                                  ^^^^^^^  this file
  *
- * WHAT IS NEW IN TOPIC 2
- *   • TAC -> MIPS: a register cache over memory homes, and syscalls for print
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * RECEIVES  the OPTIMIZED three-address code from tac.c
+ * PRODUCES  a MIPS assembly file that loads and runs in SPIM / QtSPIM
  * ========================================================================= */
 
 /* ============================================================================
@@ -77,6 +68,8 @@ static const char* funcLabel(const char* name) {
     return buf[which];
 }
 
+/* Assembler label for a global variable: `counter` becomes `g_counter`, so a
+ * user variable can never collide with an instruction name or our own labels. */
 static const char* dataLabel(const char* name) {
     static char buf[2][MAX_VAR_NAME + 8];
     static int which = 0;
@@ -126,6 +119,8 @@ static int isTemp(const char* s) {
 static void emitStoreHome(int reg, const char* name);
 static void emitLoadHome(int reg, const char* name);
 
+/* Mark every register free and reset the statistics.  Called at the start
+ * of each function, because register contents do not survive a call. */
 void initRegAlloc(void) {
     for (int i = 0; i < NUM_TEMP_REGS; i++) {
         regAlloc.regs[i].varName[0] = '\0';
@@ -214,6 +209,8 @@ static int defReg(const char* name) {
     return r;
 }
 
+/* Forget what register r holds, WITHOUT writing it back.  Only safe once the
+ * value has been stored (spillReg) or is no longer needed. */
 static void releaseReg(int r) {
     if (r < 0) return;
     regAlloc.regs[r].inUse      = 0;
@@ -250,6 +247,8 @@ static void flushRegisters(const char* why) {
     }
 }
 
+/* Report how often the register cache had to store to and reload from memory:
+ * a direct measure of how well ten registers covered the program's names. */
 void printRegAllocStats(void) {
     printf("  Register spills (store to memory) : %d\n", regAlloc.spillCount);
     printf("  Register reloads (load from memory): %d\n", regAlloc.loadCount);
@@ -275,6 +274,10 @@ static void emitLoadHome(int reg, const char* name) {
     else             fprintf(out, "    lw   $t%d, %d($sp)        # %s\n", reg, s->offset, s->name);
 }
 
+/* Emit the store that writes register `reg` back to `name`'s home: a label
+ * for a global, or an offset from $sp for a local.  The counterpart of
+ * emitLoadHome; together they are the only code that knows how a name maps
+ * to an address, so no other part of this file has to. */
 static void emitStoreHome(int reg, const char* name) {
     Symbol* s = lookupSymbol(name);
     if (!s) {
@@ -336,6 +339,9 @@ static int layoutFrame(TACInstr* funcBegin) {
     return size;
 }
 
+/* Function entry: make room on the stack for the whole activation record in
+ * one step, then save the return address so this function can make calls
+ * of its own without losing the way back. */
 static void emitPrologue(const char* name, int size) {
     fprintf(out, "\n# ==== function %s ====\n", name);
     fprintf(out, "%s:\n", funcLabel(name));
@@ -343,6 +349,9 @@ static void emitPrologue(const char* name, int size) {
     fprintf(out, "    sw   $ra, %d($sp)        # save return address\n", size - 4);
 }
 
+/* Function exit: restore the return address and release the frame.  main
+ * ends the program with the SPIM exit syscall instead of returning, because
+ * there is no caller to return to. */
 static void emitEpilogue(const char* name, int size) {
     fprintf(out, "%s__epilogue:\n", funcLabel(name));
     fprintf(out, "    lw   $ra, %d($sp)        # restore return address\n", size - 4);
@@ -403,6 +412,10 @@ static void emitDataSection(TACInstr* head) {
     fprintf(out, "\n.text\n.globl main\n");
 }
 
+/* Entry point for Phase 6: write the optimized TAC out as a MIPS .s file.
+ * Pass 1 emits the .data section for globals; pass 2 translates one function
+ * at a time, laying out its frame before emitting a single instruction so
+ * that any value can be spilled to memory at any moment. */
 void generateMIPSFromTAC(const char* filename) {
     out = fopen(filename, "w");
     if (!out) { fprintf(stderr, "Cannot open output file %s\n", filename); exit(1); }
@@ -432,45 +445,16 @@ void generateMIPSFromTAC(const char* filename) {
 
         emitPrologue(currentFunc, frameSize);
 
+        TACOp lastOp = TAC_FUNC_BEGIN;   /* the body's final instruction */
         for (TACInstr* i = c->next; i && i->op != TAC_FUNC_END; i = i->next) {
-            /* --------------------------------------------------------
-             * TODO (Topic 2) — TAC -> MIPS
-             * One case per TAC opcode.  Everything you need is already written above:
-             *
-             *     operandReg(name)   register holding that value (loads it, or does
-             *                        `li` if it is a literal)
-             *     defReg(name)       register to WRITE a new value of `name` into
-             *     flushRegisters()   write every dirty register back to memory
-             *
-             *   TAC_DECL     no instruction — the slot was reserved by layoutFrame().
-             *                Emit a comment saying where it lives; you will be glad of
-             *                it the first time you read your own assembly.
-             *
-             *   TAC_ASSIGN   result = arg1
-             *                    int a = operandReg(i->arg1);
-             *                    int d = defReg(i->result);
-             *                    move $td, $ta
-             *
-             *   TAC_ADD      result = arg1 + arg2   ->   add $td, $ta, $tb
-             *
-             *   TAC_PRINT    print arg1, using the SPIM syscalls:
-             *                    move $a0, $t<arg>
-             *                    li   $v0, 1        # 1 = print integer
-             *                    syscall
-             *                    la   $a0, __nl     # then a newline
-             *                    li   $v0, 4        # 4 = print string
-             *                    syscall
-             *
-             *   TAC_RETURN   put the value in $v0, then jump to the epilogue label.
-             *                Do NOT just fall through.
-             *
-             * WHY defReg AND operandReg ARE DIFFERENT
-             *   operandReg must LOAD the value from memory if it is not already in a
-             *   register.  defReg must not: the register is about to be overwritten,
-             *   so loading first is a wasted instruction.  Use the wrong one and your
-             *   code still works — just with an extra `lw` everywhere.  Reading your
-             *   own output and spotting that is a genuinely good exercise.
-             * -------------------------------------------------------- */
+            lastOp = i->op;
+            /* INSTRUCTION SELECTION: one case per TAC opcode.
+             * Operands are read with operandReg (loads the value if it is not
+             * already cached) and results are written with defReg (no load,
+             * since the old value is about to be overwritten; marks the
+             * register dirty so it is written back before being reused).
+             * Each case is preceded by the TAC it came from as a comment, so
+             * the .s file can be read side by side with the .tac file. */
             char tacText[256];
             formatTAC(i, tacText, sizeof tacText);
 
@@ -525,9 +509,12 @@ void generateMIPSFromTAC(const char* filename) {
                         int a = operandReg(i->arg1);
                         fprintf(out, "    move $v0, $t%d\n", a);
                     }
-                    /* Jump rather than fall through: a return in the middle
-                     * of a function (Topic 3) must skip everything after it. */
-                    fprintf(out, "    j    %s__epilogue\n", funcLabel(currentFunc));
+                    /* A return in the middle of a function (Topic 3) must jump
+                     * over everything after it.  A return that is already the
+                     * last instruction falls straight into the epilogue, so a
+                     * jump there would only jump to the next line. */
+                    if (i->next && i->next->op != TAC_FUNC_END)
+                        fprintf(out, "    j    %s__epilogue\n", funcLabel(currentFunc));
                     break;
 
                 default:
@@ -540,7 +527,11 @@ void generateMIPSFromTAC(const char* filename) {
             }
         }
 
-        flushRegisters("end of function body");
+        /* Write back registers only if control can actually fall through to
+         * here.  When the body ends in RETURN, its jump skips this point, so
+         * the stores would be unreachable — and they would be pointless
+         * anyway, since the epilogue is about to discard the frame. */
+        if (lastOp != TAC_RETURN) flushRegisters("end of function body");
         emitEpilogue(currentFunc, frameSize);
     }
 

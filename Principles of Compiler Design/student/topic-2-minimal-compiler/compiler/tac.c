@@ -6,12 +6,6 @@
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *                                           ^^^  this file
  *
- * WHAT IS NEW IN TOPIC 2
- *   • AST -> three-address code, plus the optimizer skeleton
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
  * RECEIVES  the AST, after semantic.c has certified it (every name declared)
  * PRODUCES  two TAC lists: the direct translation (saved as .tac) and the
  *           optimized version (saved as .optimized.tac) that codegen.c
@@ -29,6 +23,8 @@ TACList tacList;
 TACList optimizedList;
 TempAllocator tempAlloc;
 
+/* Reset both TAC lists and the temporary allocator.  Called once per
+ * compilation, before generateTAC. */
 void initTAC() {
     tacList.head = NULL;
     tacList.tail = NULL;
@@ -46,12 +42,19 @@ void initTAC() {
     trace("TAC: Temporary allocator initialized\n");
 }
 
+/* A brand-new temporary name that is never reused (t0, t1, t2, ...).
+ * Kept for reference: this compiler uses allocTemp instead, which recycles
+ * freed temporaries and so keeps the frame small.  Caller owns the string. */
 char* newTemp() {
     char* temp = malloc(10);
     sprintf(temp, "t%d", tacList.tempCount++);
     return temp;
 }
 
+/* A temporary name for a new intermediate value, reusing one released by
+ * freeTemp when possible.  Reuse matters because every temporary gets its own
+ * stack slot in codegen.c: without it, a long expression would need one slot
+ * per operator.  Returns the name ("t3"); the caller owns the string. */
 char* allocTemp() {
     int tempNum;
 
@@ -73,6 +76,9 @@ char* allocTemp() {
     return temp;
 }
 
+/* Return a temporary to the pool once nothing will read it again.  Only
+ * pass real temporaries: this checks just the first letter, which is why
+ * callers go through releaseOperand/isTempName first. */
 void freeTemp(char* temp) {
     if (!temp || temp[0] != 't') return;
 
@@ -87,6 +93,7 @@ void freeTemp(char* temp) {
 }
 
 
+/* Trace how many temporaries were created and how many are free for reuse. */
 void printTempAllocatorState() {
     trace("\n┌──────────────────────────────────────────────────────────┐\n");
     trace("│ TEMPORARY ALLOCATOR STATISTICS                           │\n");
@@ -98,6 +105,8 @@ void printTempAllocatorState() {
     trace("└──────────────────────────────────────────────────────────┘\n\n");
 }
 
+/* Build one TAC instruction.  Every operand string is COPIED, so callers may
+ * free or reuse their own strings as soon as this returns. */
 TACInstr* createTAC(TACOp op, char* arg1, char* arg2, char* result) {
     TACInstr* instr = malloc(sizeof(TACInstr));
     instr->op = op;
@@ -108,6 +117,8 @@ TACInstr* createTAC(TACOp op, char* arg1, char* arg2, char* result) {
     return instr;
 }
 
+/* Add an instruction to the end of the unoptimized list.  A tail pointer
+ * makes this constant time, so emitting a program is linear in its size. */
 void appendTAC(TACInstr* instr) {
     if (!tacList.head) {
         tacList.head = tacList.tail = instr;
@@ -117,6 +128,7 @@ void appendTAC(TACInstr* instr) {
     }
 }
 
+/* Add an instruction to the end of the optimized list (same as appendTAC). */
 void appendOptimizedTAC(TACInstr* instr) {
     if (!optimizedList.head) {
         optimizedList.head = optimizedList.tail = instr;
@@ -125,11 +137,6 @@ void appendOptimizedTAC(TACInstr* instr) {
         optimizedList.tail = instr;
     }
 }
-
-/* ── BREAK LABEL STACK ──────────────────────────────────────────────────────
- * When entering a switch, for, or while, push the "end" label so that any
- * nested NODE_BREAK can emit GOTO to the right exit point.
- */
 
 /* Forward declarations */
 static void generateTACStmt(ASTNode* node);
@@ -242,6 +249,9 @@ static void generateTACStmt(ASTNode* node) {
     }
 }
 
+/* Entry point for Phase 4: translate the whole program into TAC, stored in
+ * tacList.  The statements are wrapped in FUNC_BEGIN main ... FUNC_END main
+ * because the back end always generates code for functions; see below. */
 void generateTAC(ASTNode* node) {
     if (!node) return;
     /* The starter language has no function syntax, but the code generator
@@ -308,7 +318,8 @@ void formatTAC(const TACInstr* i, char* buf, size_t n) {
         case TAC_CALL:       snprintf(buf, n, "%s = CALL %s, %s",
                                       i->result, i->arg1, i->arg2); break;
         case TAC_RETURN:     if (i->arg1) snprintf(buf, n, "RETURN %s", i->arg1);
-                             else         snprintf(buf, n, "RETURN"); break;
+                             else         snprintf(buf, n, "RETURN");
+                             break;
         case TAC_LABEL:      snprintf(buf, n, "%s:", i->result); break;
         case TAC_GOTO:       snprintf(buf, n, "GOTO %s", i->arg1); break;
         case TAC_IF_FALSE:   snprintf(buf, n, "IF_FALSE %s GOTO %s", i->arg1, i->arg2); break;
@@ -328,6 +339,8 @@ int countTAC(const TACList* list) {
     return n;
 }
 
+/* Print a TAC list with line numbers for the trace.  Labels and function
+ * boundaries are printed flush left so the structure stands out. */
 static void dumpList(const TACList* list, const char* title) {
     char buf[256];
     trace("%s\n", title);
@@ -350,6 +363,8 @@ void printOptimizedTAC(void) { dumpList(&optimizedList, "OPTIMIZED THREE-ADDRESS
 TACList* getOptimizedTAC(void) { return &optimizedList; }
 TACList* getUnoptimizedTAC(void) { return &tacList; }
 
+/* Write a TAC list to a file in the same format as the trace, so the .tac
+ * files can be compared side by side with what was shown on screen. */
 static void saveList(const TACList* list, const char* filename, const char* banner) {
     FILE* f = fopen(filename, "w");
     if (!f) { fprintf(stderr, "Cannot write %s\n", filename); return; }
@@ -426,6 +441,9 @@ OptStats getOptStats(void) { return optStats; }
 
 static void clearFacts(void) { factCount = 0; }
 
+/* Forget everything known about `name` because it is about to change.  That
+ * includes facts about OTHER names that were copies of it: after
+ * "y = x; x = 5", y is no longer a copy of x. */
 static void dropFactsAbout(const char* name) {
     for (int i = 0; i < factCount; i++) {
         if (strcmp(facts[i].name, name) == 0 ||
@@ -446,6 +464,8 @@ static void dropNonTempFacts(void) {
     }
 }
 
+/* Remember that `name` now holds `value`: a literal if isConst, otherwise the
+ * name it was copied from.  Any older fact about `name` is dropped first. */
 static void recordFact(const char* name, const char* value, int isConst) {
     dropFactsAbout(name);
     if (factCount >= MAX_FACTS) return;
@@ -455,6 +475,8 @@ static void recordFact(const char* name, const char* value, int isConst) {
     factCount++;
 }
 
+/* What is known about `name`?  Returns the constant or source name it holds,
+ * or NULL if nothing is known.  With wantConst set, only constants count. */
 static const char* lookupFact(const char* name, int wantConst) {
     if (!name) return NULL;
     for (int i = 0; i < factCount; i++)
@@ -723,6 +745,11 @@ static TACList optimizePass(TACList* in) {
     return out;
 }
 
+/* Entry point for Phase 5.  Copies the unoptimized TAC and runs
+ * optimizePass on it until a pass makes no change (a fixed point), because
+ * each technique can expose work for another.  The limit of 20 passes is a
+ * safety net against a bug that makes two rewrites undo each other forever.
+ * Stores the result in optimizedList and prints the statistics. */
 void optimizeTAC(void) {
     memset(&optStats, 0, sizeof optStats);
     optStats.instructionsBefore = countTAC(&tacList);
