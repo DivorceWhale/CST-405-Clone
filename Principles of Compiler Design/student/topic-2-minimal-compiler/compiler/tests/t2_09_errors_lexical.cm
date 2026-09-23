@@ -1,0 +1,11 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Two characters that are not part of the language.  The scanner must
+ * report BOTH in one run, each with its line and column, and the compiler
+ * must then stop with a non-zero exit status:
+ *   line 9, column 6  : unexpected character '@'
+ *   line 10, column 10: unexpected character '$' */
+int x;
+int y;
+x = 5@;
+y = x + 1$;
+print(y);

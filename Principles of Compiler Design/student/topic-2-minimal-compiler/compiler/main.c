@@ -5,17 +5,10 @@
  * THE PIPELINE, AND WHERE THIS FILE SITS IN IT
  *   scanner -> parser -> ast -> semantic -> tac -> codegen
  *
- * WHAT IS NEW IN TOPIC 2
- *   • The six-phase driver every later milestone reuses unchanged
- *
- * WHAT COMES NEXT
- *   Topic 3 adds functions, arrays and the rest of arithmetic — and with them, real activation records.
- *
- * YOUR TASK
- *   This is Project 2: the first compiler you build end to end.  Sections
- *   marked  TODO (Topic 2)  are yours.  Everything else — the headers, the
- *   scanner, the driver, the register allocator — is given, because the
- *   point of this project is the six PHASES, not the plumbing between them.
+ * RECEIVES  the command line: a source file, an output .s file, and flags
+ * PRODUCES  runs the six phases in order, stops at the first phase that
+ *           reports errors (exit status 1), and on success writes the .s
+ *           file plus the .tac listings (exit status 0)
  * ========================================================================= */
 
 /* ============================================================================
@@ -35,10 +28,12 @@
  * the work of fixing it.
  *
  * USAGE
- *   ./minicompiler <input.c> <output.s> [-q]
+ *   ./minicompiler <input.c> <output.s> [-q] [-t]
  *
  *   -q   quiet: print only errors and the final summary.  Use this once the
  *        trace stops being useful and you just want the assembly.
+ *   -t   print the token stream (line, column, kind, text) as the parser
+ *        consumes it — the output of Phase 1 on its own.
  *
  * SIDE OUTPUTS (named after <output.s>)
  *   output.tac            the intermediate code before optimization
@@ -56,6 +51,8 @@
 extern int yyparse(void);
 extern FILE* yyin;
 extern ASTNode* root;
+extern int lexErrorCount;   /* scanner.l: bad characters seen    */
+extern int showTokens;      /* scanner.l: print tokens when set  */
 
 int quiet = 0;   /* Set by -q; consulted by the banner helpers below */
 
@@ -76,6 +73,7 @@ static const char* phaseName[NUM_PHASES] = {
 static double phaseMs[NUM_PHASES];
 static clock_t phaseStart;
 
+/* Start timing phase n and print its banner (unless -q). */
 static void beginPhase(int n) {
     phaseStart = clock();
     if (quiet) return;
@@ -83,6 +81,7 @@ static void beginPhase(int n) {
     printf("│ PHASE %-54s │\n", phaseName[n]);
     printf("└──────────────────────────────────────────────────────────────┘\n");
 }
+/* Stop timing phase n; the times are printed in the final report. */
 static void endPhase(int n) {
     phaseMs[n] = 1000.0 * (double)(clock() - phaseStart) / CLOCKS_PER_SEC;
 }
@@ -96,14 +95,20 @@ static void deriveTacNames(const char* out, char* tac, char* opt) {
     snprintf(opt, 256, "%.*s.optimized.tac", (int)base, out);
 }
 
+/* Run the six phases in order.  Each phase runs only if every earlier one
+ * succeeded, so a later phase never has to cope with broken input.  Exit
+ * status: 0 when the .s file was written, 1 when any phase reported errors
+ * (or the input could not be opened). */
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        printf("Usage: %s <input.c> <output.s> [-q]\n", argv[0]);
+        printf("Usage: %s <input.c> <output.s> [-q] [-t]\n", argv[0]);
         printf("Example: ./minicompiler test.c test.s\n");
         return 1;
     }
-    for (int i = 3; i < argc; i++)
+    for (int i = 3; i < argc; i++) {
         if (strcmp(argv[i], "-q") == 0) quiet = 1;
+        if (strcmp(argv[i], "-t") == 0) showTokens = 1;
+    }
 
     yyin = fopen(argv[1], "r");
     if (!yyin) {
@@ -127,8 +132,23 @@ int main(int argc, char* argv[]) {
      * parser.y build the AST as the reductions happen, so by the time
      * yyparse() returns 0 the tree is already standing. */
     beginPhase(0);
+    if (showTokens) {
+        printf("\nTOKEN STREAM\n");
+        printf("  LINE  COL  KIND   TEXT\n");
+    }
     int parseFailed = yyparse();
     endPhase(0);
+
+    /* The scanner reports bad characters and keeps going, so that one run
+     * lists them all; the parser never sees them and may well succeed.
+     * This check is what turns them into a failed compilation. */
+    if (lexErrorCount > 0) {
+        printf("\n✗ Compilation stopped: %d lexical error(s) — the program contains\n",
+               lexErrorCount);
+        printf("  characters that are not part of the language.  See above.\n");
+        fclose(yyin);
+        return 1;
+    }
 
     if (parseFailed != 0 || root == NULL) {
         printf("\n✗ Compilation stopped: the program is not syntactically valid.\n");

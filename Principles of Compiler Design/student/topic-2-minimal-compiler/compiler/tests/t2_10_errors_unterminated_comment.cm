@@ -1,0 +1,9 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * The block comment on line 8 is never closed, so it swallows the rest of
+ * the file.  Expected: ONE lexical error, "unterminated comment", reported
+ * at line 8, column 11 — where the comment STARTED, not where the file
+ * ended. */
+int x;
+x = 1;
+print(x); /* this comment never ends
+print(x);
