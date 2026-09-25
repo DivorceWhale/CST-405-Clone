@@ -79,9 +79,12 @@ static Symbol* appendTo(SymbolTable* t, const char* name, const char* type) {
  * LOCAL SCOPE — one activation record
  * ========================================================================*/
 
+/* Start an empty local table for the next function's activation record.
+ * Every interaction with this table is traced, tagged [STORAGE]. */
 void initSymTab(void) {
     locals.count      = 0;
     locals.nextOffset = 0;   /* Offsets grow upward from $sp */
+    trace("  [STORAGE] new activation record: local table cleared\n");
 }
 
 /* Give a local scalar the next free word in the frame.  Returns its byte
@@ -89,11 +92,16 @@ void initSymTab(void) {
  * already in this frame.  semantic.c has already rejected duplicates, so -1
  * is a safety net, not the way duplicates are reported. */
 int addVar(char* name, char* type) {
-    if (findIn(&locals, name)) return -1;
+    if (findIn(&locals, name)) {
+        trace("  [STORAGE] addVar  '%s' -> refused, already has a slot\n", name);
+        return -1;
+    }
 
     Symbol* s = appendTo(&locals, name, type);
     s->offset = locals.nextOffset;
     locals.nextOffset += 4;                        /* one word per int      */
+    trace("  [STORAGE] addVar  '%s' -> %d($sp)   (frame now %d bytes)\n",
+          name, s->offset, locals.nextOffset);
     return s->offset;
 }
 
@@ -182,11 +190,16 @@ int addGlobalArray(char* name, int size) {
  * both will share the outer slot, even though semantic.c accepts it. */
 Symbol* lookupSymbol(const char* name) {
     Symbol* s = findIn(&locals, name);
-    if (s) return s;
+    if (s) {
+        trace("  [STORAGE] lookup  '%s' -> %d($sp)   (local)\n", name, s->offset);
+        return s;
+    }
     /* Before initGlobalScope has run the global table holds garbage, so
      * treat it as empty rather than searching it. */
-    if (!globalsReady) return NULL;
-    return findIn(&globals, name);
+    s = globalsReady ? findIn(&globals, name) : NULL;
+    if (s) trace("  [STORAGE] lookup  '%s' -> label g_%s   (global)\n", name, name);
+    else   trace("  [STORAGE] lookup  '%s' -> no storage yet\n", name);
+    return s;
 }
 
 /* Frame offset of a LOCAL name, or -1 if the name is global (globals have a

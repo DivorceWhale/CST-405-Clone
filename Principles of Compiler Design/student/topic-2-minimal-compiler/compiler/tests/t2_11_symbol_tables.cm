@@ -1,0 +1,12 @@
+/* Expected output: 7
+ * The program from Topic 2 Activity 5 ("Predict the Symbol Table").
+ * Compile it WITHOUT -q to watch both symbol tables: [SCOPE] lines are the
+ * scope stack in semantic.c (is this name visible?) and [STORAGE] lines are
+ * the storage map in symtab.c (what address is this name?). */
+int a;
+int b;
+int sum;
+a = 3;
+b = 4;
+sum = a + b;
+print(sum);

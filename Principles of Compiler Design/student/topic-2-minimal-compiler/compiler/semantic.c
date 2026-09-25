@@ -162,16 +162,24 @@ static int addVarToScope(char* name) {
     return 0;
 }
 
-/* Check if variable is declared in any visible scope */
+/* Is `name` visible here?  Searches from the innermost scope outward, so the
+ * nearest declaration wins (static scoping).  Returns 1 if found, 0 if not.
+ * Every lookup is traced, tagged [SCOPE], so the trace shows each question
+ * this table answers and which scope answered it. */
 static int isVarDeclaredInScope(char* name) {
-    /* Search from innermost to outermost scope */
+    int searched = 0;
     for (int depth = scopeDepth - 1; depth >= 0; depth--) {
+        searched++;
         for (int i = 0; i < scopes[depth].count; i++) {
             if (strcmp(scopes[depth].names[i], name) == 0) {
+                trace("  [SCOPE]   lookup  '%s' -> found in scope[%d] (searched %d scope%s)\n",
+                      name, depth, searched, searched == 1 ? "" : "s");
                 return 1;
             }
         }
     }
+    trace("  [SCOPE]   lookup  '%s' -> NOT FOUND in any of %d scope%s\n",
+          name, searched, searched == 1 ? "" : "s");
     return 0;
 }
 
@@ -272,6 +280,8 @@ static void checkStmt(ASTNode* node) {
                 break;
             }
             if (addVarToScope(name) != 0) {
+                trace("  [SCOPE]   declare '%s' (line %d) -> REFUSED, already in scope[%d]\n",
+                      name, node->lineno, scopeDepth - 1);
                 fprintf(stderr, "\n╔════════════════════════════════════════════════════════════╗\n");
                 fprintf(stderr, "║ SEMANTIC ERROR - Duplicate Declaration                     ║\n");
                 fprintf(stderr, "╚════════════════════════════════════════════════════════════╝\n");
@@ -280,7 +290,8 @@ static void checkStmt(ASTNode* node) {
                 fprintf(stderr, "  💡 Suggestion: remove this declaration, or pick a new name\n\n");
                 semInfo.errorCount++;
             } else {
-                trace("  line %d: declared '%s'\n", node->lineno, name);
+                trace("  [SCOPE]   declare '%s' (line %d) -> added to scope[%d]\n",
+                      name, node->lineno, scopeDepth - 1);
             }
             break;
         }
@@ -340,7 +351,10 @@ int performSemanticAnalysis(ASTNode* root) {
      * list is the whole analysis.  Topic 3 replaces this with two passes. */
     checkStmtList(root);
 
-    /* Exit global scope */
+    /* Show the table's final contents, then discard it: this table only
+     * exists to answer visibility questions during Phase 3. */
+    trace("\nScope stack after analysis (discarded next):");
+    printSemanticScopes();
     exitScope();
 
     return semInfo.errorCount > 0 ? -1 : 0;

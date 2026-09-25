@@ -47,6 +47,7 @@ Every test states its expected result in its header comment.
 | `t2_02_chained.cm` | runs | prints `6 21`; the AST shows `+` is left associative |
 | `t2_03_comments.cm` | runs | prints `42`; both comment forms are skipped |
 | `t2_06_optimizer.cm` | runs | prints `18 0 7 25`; exercises folding, propagation and `x + 0` |
+| `t2_11_symbol_tables.cm` | runs | prints `7`; compile without `-q` to trace every interaction with both symbol tables (see `SYMBOL_TABLES.md`) |
 | `t2_04_errors_undeclared.cm` | **fails** (semantic) | `'ghost'` undeclared, line 8 |
 | `t2_07_errors_semantic_multi.cm` | **fails** (semantic) | three errors in one run: duplicate `x` (line 9), undeclared `totl` with "did you mean 'total'?" (line 11), reserved name `t1` (line 12) |
 | `t2_05_errors_syntax.cm` | **fails** (syntax) | missing `;` after the assignment on line 7 |
