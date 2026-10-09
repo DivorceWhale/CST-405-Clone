@@ -114,7 +114,7 @@ stays correct when Topic 4 adds loops.
 | Team member | Video |
 |---|---|
 | Luke Hoyle | https://youtu.be/VDIfFT5E3AY |
-| Fernando | _link to be added_ |
+| Fernando | https://youtu.be/oy9YwTpvWSI |
 
 ## Team contributions
 

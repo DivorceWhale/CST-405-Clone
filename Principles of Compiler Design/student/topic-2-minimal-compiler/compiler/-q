@@ -1,0 +1,62 @@
+# ============ Generated MIPS ============
+.data
+__nl: .asciiz "\n"
+
+.text
+.globl main
+
+# ==== function main ====
+main:
+    addi $sp, $sp, -24        # build activation record
+    sw   $ra, 20($sp)        # save return address
+    # int a lives at 0($sp)
+    # int b lives at 4($sp)
+    # int c lives at 8($sp)
+    # int d lives at 12($sp)
+    # a = 18
+    li   $t0, 18
+    # PRINT 18
+    li   $t1, 18
+    move $a0, $t1
+    li   $v0, 1              # syscall 1 = print integer
+    syscall
+    la   $a0, __nl
+    li   $v0, 4              # syscall 4 = print string
+    syscall
+    # b = 0
+    li   $t2, 0
+    # PRINT 0
+    li   $t3, 0
+    move $a0, $t3
+    li   $v0, 1              # syscall 1 = print integer
+    syscall
+    la   $a0, __nl
+    li   $v0, 4              # syscall 4 = print string
+    syscall
+    # c = 7
+    li   $t4, 7
+    # PRINT 7
+    li   $t5, 7
+    move $a0, $t5
+    li   $v0, 1              # syscall 1 = print integer
+    syscall
+    la   $a0, __nl
+    li   $v0, 4              # syscall 4 = print string
+    syscall
+    # d = 25
+    li   $t6, 25
+    # PRINT 25
+    li   $t7, 25
+    move $a0, $t7
+    li   $v0, 1              # syscall 1 = print integer
+    syscall
+    la   $a0, __nl
+    li   $v0, 4              # syscall 4 = print string
+    syscall
+    # RETURN 0
+    move $v0, $t3
+main__epilogue:
+    lw   $ra, 20($sp)        # restore return address
+    addi $sp, $sp, 24        # discard activation record
+    li   $v0, 10             # syscall 10 = exit
+    syscall
