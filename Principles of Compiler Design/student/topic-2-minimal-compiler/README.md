@@ -48,10 +48,13 @@ Every test states its expected result in its header comment.
 | `t2_03_comments.cm` | runs | prints `42`; both comment forms are skipped |
 | `t2_06_optimizer.cm` | runs | prints `18 0 7 25`; exercises folding, propagation and `x + 0` |
 | `t2_11_symbol_tables.cm` | runs | prints `7`; compile without `-q` to trace every interaction with both symbol tables (see `SYMBOL_TABLES.md`) |
+| `t2_12_longest_match.cm` | runs | prints `5`; `integer` and `printer` are identifiers, not keywords |
+| `t2_13_many_variables.cm` | runs | prints `78`; twelve variables force register spills |
 | `t2_04_errors_undeclared.cm` | **fails** (semantic) | `'ghost'` undeclared, line 8 |
 | `t2_07_errors_semantic_multi.cm` | **fails** (semantic) | three errors in one run: duplicate `x` (line 9), undeclared `totl` with "did you mean 'total'?" (line 11), reserved name `t1` (line 12) |
 | `t2_05_errors_syntax.cm` | **fails** (syntax) | missing `;` after the assignment on line 7 |
 | `t2_08_errors_multi_syntax.cm` | **fails** (syntax) | two missing `;` in one run, lines 7 and 9 |
+| `t2_14_errors_phase_order.cm` | **fails** (syntax) | missing `)` on line 7; the semantic error on line 8 is never reached |
 | `t2_09_errors_lexical.cm` | **fails** (lexical) | `'@'` at line 9 col 6 and `'$'` at line 10 col 10, both in one run |
 | `t2_10_errors_unterminated_comment.cm` | **fails** (lexical) | unterminated comment reported where it starts, line 8 col 11 |
 
@@ -66,6 +69,10 @@ Every test states its expected result in its header comment.
 - **Semantic:** undeclared names, duplicate declarations, and names reserved
   for compiler temporaries (`t0`, `t1`, ...), each with its line. An undeclared
   name close to a declared one gets a suggestion (`totl` → `total`).
+  - **Phase order:** the phases run in order and compilation stops at the first
+  one that reports errors, so a program with both a syntax error and a
+  semantic error reports only the syntax error (`t2_14`). Within a single
+  phase, every error is reported in one run.
 
 ## Optimizations
 
@@ -99,12 +106,24 @@ stays correct when Topic 4 adds loops.
   optimization the arithmetic instructions in `codegen.c` are rarely reached.
   They were verified by compiling every test with the optimizer disabled and
   checking the SPIM output.
+  - The starter grammar has only `+`. The optimizer also handles `-`, `*` and
+  `/` (and the parser declares their precedence) so that Topic 3 needs no
+  changes there, but those operators cannot yet be written in source code.
+- Compilation is single-file and every variable is a global-scope `int`;
+  there are no functions, arrays or blocks until later topics.
+
+  ## Documentation
+
+- `SYMBOL_TABLES.md` explains the compiler's two symbol tables: the scope
+  stack in `semantic.c` (is this name visible?) and the storage map in
+  `symtab.c` (what address does this name have?). It includes annotated
+  traces from `t2_11` and `t2_07`.
 
 ## Response to Project 1 feedback
 
 | Feedback on Project 1 | What changed in Project 2 |
 |---|---|
-| Only the supplied tests were in the repo | 5 new tests of our own (`t2_06`–`t2_10`), each with its expected result in its header comment; 6 of the 11 tests are supposed to fail, covering lexical, syntax and semantic errors |
+| Only the supplied tests were in the repo | 8 new tests of our own (`t2_06`–`t2_10` and `t2_12`–`t2_14`), each with its expected result in its header comment; 7 of the 14 tests are supposed to fail, covering lexical, syntax and semantic errors |
 | Starter instruction blocks left in the source | All starter TODO / "YOUR TASK" blocks removed; every file's header now states its phase, what it receives, and what it produces; comments explain why decisions were made |
 | A compiled binary was committed | Build products (`minicompiler`, `.s`, `.tac`) are in `.gitignore`, and the Topic 1 `lexer` binary was removed from the repository |
 | One "Add files via upload" commit | Work committed in separate commits, one per phase |

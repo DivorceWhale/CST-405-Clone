@@ -1,0 +1,8 @@
+/* THIS PROGRAM IS SUPPOSED TO FAIL.
+ * Two mistakes in different phases: a missing ')' on line 7 (syntax) and an
+ * undeclared name `ghost` on line 8 (semantic).  Phases run in order and stop
+ * at the first one that fails, so ONLY the syntax error is reported and
+ * semantic analysis never runs. */
+int x;
+print(x;
+print(ghost);

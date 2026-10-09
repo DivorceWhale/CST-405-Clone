@@ -1,0 +1,9 @@
+/* Expected output: 5
+ * Identifiers that START with a keyword.  `integer` begins with `int` and
+ * `printer` begins with `print`, but the scanner uses LONGEST MATCH, so both
+ * are plain identifiers, not keywords. */
+int integer;
+int printer;
+integer = 4;
+printer = integer + 1;
+print(printer);
