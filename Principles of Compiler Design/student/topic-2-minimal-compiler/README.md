@@ -104,7 +104,7 @@ stays correct when Topic 4 adds loops.
 
 | Feedback on Project 1 | What changed in Project 2 |
 |---|---|
-| Only the supplied tests were in the repo | 5 new tests of our own (`t2_06`–`t2_10`), each with its expected result in its header comment; 6 of the 10 tests are supposed to fail, covering lexical, syntax and semantic errors |
+| Only the supplied tests were in the repo | 5 new tests of our own (`t2_06`–`t2_10`), each with its expected result in its header comment; 6 of the 11 tests are supposed to fail, covering lexical, syntax and semantic errors |
 | Starter instruction blocks left in the source | All starter TODO / "YOUR TASK" blocks removed; every file's header now states its phase, what it receives, and what it produces; comments explain why decisions were made |
 | A compiled binary was committed | Build products (`minicompiler`, `.s`, `.tac`) are in `.gitignore`, and the Topic 1 `lexer` binary was removed from the repository |
 | One "Add files via upload" commit | Work committed in separate commits, one per phase |

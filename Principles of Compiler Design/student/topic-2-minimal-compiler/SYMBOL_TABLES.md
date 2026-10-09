@@ -223,7 +223,11 @@ The variables take 12 bytes. The activation record is 24 bytes because it
 also holds the saved return address `$ra` and 4 bytes of alignment padding
 (20 bytes), rounded up to a multiple of 8.
 
-The code generator records each lookup result in the assembly as a comment:
+The `[STORAGE] lookup` lines appear whenever the code generator asks the
+table for an address. Two things trigger them in this program:
+
+- Each `DECL` instruction looks up its variable so the assembly can carry a
+  comment recording where it lives:
 
 ```
 main:
@@ -234,17 +238,23 @@ main:
     # int sum lives at 8($sp)
 ```
 
+- At the end of `main`, the code generator writes every modified register
+  back to its memory home. Each of those stores looks up the variable's
+  offset too, so `a`, `b` and `sum` each appear again in the trace.
+
 The program runs in SPIM and prints `7`.
 
-Only three storage lookups happen because the optimizer computed `sum = 7`
-at compile time, so no instruction needed to load `a` or `b` from memory.
-In a program where values are not known in advance, every load and store
-would produce a `[STORAGE] lookup` line.
+The optimizer is the reason there are no loads from memory here: it computed
+`a = 3`, `b = 4` and `sum = 7` at compile time, so no instruction ever needs
+to read `a` or `b` back. The variables still get their stack slots, because
+the optimizer never removes assignments to user variables. In a program whose
+values are not known in advance, every load and store would also produce a
+`[STORAGE] lookup` line.
 
 ### When the scope stack rejects a program
 
-Compiling `tests/t2_07_errors_semantic_multi.cm` shows the scope stack
-catching two errors:
+`tests/t2_07_errors_semantic_multi.cm` contains three semantic errors. Two of
+them show up in the scope stack's trace:
 
 ```
   [SCOPE]   declare 'x' (line 7) -> added to scope[0]
@@ -254,13 +264,20 @@ catching two errors:
   [SCOPE]   lookup  'totl' -> NOT FOUND in any of 1 scope
 ```
 
+(This is an excerpt; the full trace also shows the remaining lookups.)
+
 The refused declaration becomes a *duplicate declaration* error on line 9,
 and the failed lookup becomes an *undeclared variable* error on line 11 with
-the suggestion "did you mean 'total'?". Because semantic analysis failed,
-compilation stops, and the storage map is never built for this program.
-That is the division of labor in action: illegal programs never reach the
-table that assigns addresses.
+the suggestion "did you mean 'total'?".
 
+The third error, `int t1;` on line 12, never reaches the scope stack. Names
+of the form `t0`, `t1`, ... are reserved for the compiler's own temporaries,
+so `semantic.c` rejects the declaration with a *reserved identifier* error
+before trying to add it to a scope.
+
+Because semantic analysis failed, compilation stops, and the storage map is
+never built for this program. That is the division of labor in action:
+illegal programs never reach the table that assigns addresses.
 ## 4. Known limitation
 
 The storage map keeps one flat table of locals per function, while the scope
