@@ -109,6 +109,13 @@ stays correct when Topic 4 adds loops.
 | A compiled binary was committed | Build products (`minicompiler`, `.s`, `.tac`) are in `.gitignore`, and the Topic 1 `lexer` binary was removed from the repository |
 | One "Add files via upload" commit | Work committed in separate commits, one per phase |
 
+## Video walkthroughs
+
+| Team member | Video |
+|---|---|
+| Luke Hoyle | https://youtu.be/VDIfFT5E3AY |
+| Fernando | _link to be added_ |
+
 ## Team contributions
 
 <!-- Fill in before submitting: who wrote, debugged, and tested each phase. -->
