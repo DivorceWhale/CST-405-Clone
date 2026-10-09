@@ -118,12 +118,19 @@ stays correct when Topic 4 adds loops.
 
 ## Team contributions
 
-<!-- Fill in before submitting: who wrote, debugged, and tested each phase. -->
-
-| Phase | Files | Team member |
+| Phase / area | Files | Team member |
 |---|---|---|
-| 1. Lexical analysis | `scanner.l` | |
-| 2. Syntax analysis + AST | `parser.y`, `ast.c` | |
-| 3. Semantic analysis | `semantic.c`, `symtab.c` | |
-| 4–5. TAC + optimization | `tac.c` | |
-| 6. Code generation | `codegen.c` | |
+| 1. Lexical analysis | `scanner.l` | Luke Hoyle |
+| 2. Syntax analysis + AST | `parser.y`, `ast.c` | Luke Hoyle |
+| 3. Semantic analysis | `semantic.c`, `symtab.c` | Luke Hoyle |
+| 4–5. TAC + optimization | `tac.c` | Luke Hoyle |
+| 6. Code generation | `codegen.c` | Luke Hoyle |
+| Running and verifying the test suite | `tests/`, `make test` | Luke Hoyle |
+| Documentation | `README.md`, `SYMBOL_TABLES.md` | Fernando |
+| Additional test programs | `tests/` | Fernando |
+
+**Luke Hoyle** wrote and debugged the code for all six phases, and ran the
+test programs to verify each one produces its expected result.
+
+**Fernando** is responsible for the project documentation and for adding
+further test programs to the suite.
