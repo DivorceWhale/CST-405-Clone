@@ -133,7 +133,7 @@ stays correct when Topic 4 adds loops.
 | Team member | Video |
 |---|---|
 | Luke Hoyle | https://youtu.be/VDIfFT5E3AY |
-| Fernando | https://youtu.be/oy9YwTpvWSI |
+| Fernando | https://youtu.be/YWc81GluniM |
 
 ## Team contributions
 
